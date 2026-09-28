@@ -34,37 +34,44 @@ namespace SmartWishbone
             return dataDict;
         }
 
-        internal static void SaveTrackableData(Dictionary<string, Trackable> data)
+        // the search walks the whole BepInEx folder (142 ms on a modded client, 16 ms on a dedicated server), so the
+        // file found at load is reused for every save until it disappears
+        private static string externalDataFilePath;
+
+        internal static void SaveTrackableData(string trackablesAsString)
         {
-            var dataFilesFound = Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath), $"{dataFileInfix}.yaml", SearchOption.AllDirectories).ToList();
-
-            if (dataFilesFound.Count > 0)
+            if (externalDataFilePath == null || !File.Exists(externalDataFilePath))
             {
-                dataFilesFound.Sort();
-                var dataFilePath = dataFilesFound[0];
-
-                Helper.Log(string.Format(savingLog, external, dataFilePath));
-
-                SaveToTextFile(data, dataFilePath);
+                externalDataFilePath = FindExternalDataFile();
             }
-            else
+
+            if (externalDataFilePath == null)
             {
                 Helper.LogWarning("No data file to save to found, aborting saving.");
             }
-        }
-
-        internal static void SaveToTextFile(Dictionary<string, Trackable> data, string path)
-        {
-            string trackablesAsString = ParseCustomDictToString(data);
-
-            if (trackablesAsString == null || !File.Exists(path))
+            else if (trackablesAsString == null)
             {
-                Helper.LogWarning(string.Format(failedSaveLog, external, path));
+                Helper.LogWarning(string.Format(failedSaveLog, external, externalDataFilePath));
             }
             else
             {
-                File.WriteAllText(path, trackablesAsString);
+                Helper.Log(string.Format(savingLog, external, externalDataFilePath));
+
+                DataFileWriter.Enqueue(externalDataFilePath, trackablesAsString);
             }
+        }
+
+        private static string FindExternalDataFile()
+        {
+            var dataFilesFound = Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath), $"{dataFileInfix}.yaml", SearchOption.AllDirectories).ToList();
+
+            if (dataFilesFound.Count == 0)
+            {
+                return null;
+            }
+
+            dataFilesFound.Sort();
+            return dataFilesFound[0];
         }
 
         internal static List<Trackable> LoadDataFiles()
@@ -77,6 +84,7 @@ namespace SmartWishbone
             {
                 dataFilesFound.Sort();
                 var dataFilePath = dataFilesFound[0];
+                externalDataFilePath = dataFilePath;
 
                 if (dataFilesFound.Count > 1)
                 {

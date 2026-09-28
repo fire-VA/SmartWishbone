@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.4
+- Adding or removing a trackable no longer stalls the server (fix notes by fire-VA): the data file is written in the background, the file found at load is reused instead of searching the whole BepInEx folder on every save, the list is converted to yaml once instead of twice, and a dedicated server no longer searches the scene for beacons it has no player to use
+
 ## 1.0.3
 - Updated for Valheim 1.0 (fix notes by fire-VA)
 - Fixed an error on every spawn and on every target switch: the mod was built against the old status effect method, which Valheim 1.0 changed

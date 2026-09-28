@@ -79,6 +79,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Parsing\DataFileWriter.cs" />
     <Compile Include="Parsing\Target.cs" />
     <Compile Include="Parsing\TrackableData.cs" />
     <Compile Include="ServerSync\Lib\AdminSyncing.cs" />

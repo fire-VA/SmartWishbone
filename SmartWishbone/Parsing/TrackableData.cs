@@ -51,13 +51,20 @@ namespace SmartWishbone
 
                 personalData.Add(prefabName, new Trackable(prefabName, "Auto"));
 
-                TryAddBeacons(new List<string>() { prefabName });
+                // beacons only serve a local player's wishbone, and a dedicated server has none, so it skips the
+                // scene-wide search
+                if (!ZNet.instance.IsDedicated())
+                {
+                    TryAddBeacons(new List<string>() { prefabName });
+                }
             }
 
-            TrackableDataLoader.SaveTrackableData(personalData);
+            string personalDataAsString = TrackableDataLoader.ParseCustomDictToString(personalData);
+
+            TrackableDataLoader.SaveTrackableData(personalDataAsString);
 
             // this triggers a config sync/rpc for all clients
-            WishboneConfig.CurrentDataCache.Value = TrackableDataLoader.ParseCustomDictToString(personalData);
+            WishboneConfig.CurrentDataCache.Value = personalDataAsString;
 
             UpdateTargets();
         }

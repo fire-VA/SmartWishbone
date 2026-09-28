@@ -9,7 +9,7 @@ namespace SmartWishbone
     {
         public const string GUID = "goldenrevolver.SmartWishbone";
         public const string NAME = "Smart Wishbone";
-        public const string VERSION = "1.0.3";
+        public const string VERSION = "1.0.4";
 
         internal static SmartWishbonePlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;
@@ -38,6 +38,8 @@ namespace SmartWishbone
 
             WishboneConfig.CurrentDataCache.SettingChanged -= WishboneConfig.CurrentDataCache_SettingChanged;
             WishboneConfig.config.Remove(WishboneConfig.CurrentDataCache.Definition);
+
+            DataFileWriter.Drain();
         }
 
         [HarmonyPatch(nameof(Game.Logout)), HarmonyPrefix]

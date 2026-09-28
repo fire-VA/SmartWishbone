@@ -1,7 +1,7 @@
 {
   "name": "Smart_Wishbone",
   "description": "Makes the wishbone fully configurable: track more kinds of ore, select your currently tracked ore, change the detection ranges and more",
-  "version_number": "1.0.4",
+  "version_number": "1.0.5",
   "website_url": "https://www.nexusmods.com/valheim/mods/2355",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2200"

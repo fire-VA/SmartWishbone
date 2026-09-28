@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.5
+- A failed background save of the data file is now logged, at the next save or when the game quits (fix notes by fire-VA)
+
 ## 1.0.4
 - Adding or removing a trackable no longer stalls the server (fix notes by fire-VA): the data file is written in the background, the file found at load is reused instead of searching the whole BepInEx folder on every save, the list is converted to yaml once instead of twice, and a dedicated server no longer searches the scene for beacons it has no player to use
 

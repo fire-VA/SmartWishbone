@@ -16,8 +16,14 @@ namespace SmartWishbone
         private static readonly object startLock = new object();
         private static Thread thread;
 
+        // BepInEx only hears Unity log lines from the main thread, so a failed write is kept here and reported from the
+        // main thread at the next save or at quit
+        private static string lastFailure;
+
         internal static void Enqueue(string path, string text)
         {
+            ReportFailure();
+
             Action job = () => File.WriteAllText(path, text);
 
             EnsureThread();
@@ -54,6 +60,18 @@ namespace SmartWishbone
             {
                 Helper.LogWarning($"Data file still saving after {drainTimeoutMs / 1000} s at shutdown.");
             }
+
+            ReportFailure();
+        }
+
+        private static void ReportFailure()
+        {
+            string failure = Interlocked.Exchange(ref lastFailure, null);
+
+            if (failure != null)
+            {
+                Helper.LogWarning(failure);
+            }
         }
 
         private static void EnsureThread()
@@ -86,7 +104,7 @@ namespace SmartWishbone
             }
             catch (Exception e)
             {
-                Helper.LogWarning($"Failed saving the data file in the background: {e.Message}");
+                Interlocked.Exchange(ref lastFailure, $"Failed saving the data file in the background: {e.Message}");
             }
         }
     }

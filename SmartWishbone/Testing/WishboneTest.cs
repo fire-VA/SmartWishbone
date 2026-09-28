@@ -20,6 +20,11 @@ namespace SmartWishbone
         private const string ResultsFolder = "FiresTests";
         private const string ResultsFile = "wishbone_test.txt";
         private const string SpawnedFilePrefix = "wishbone_spawned_";
+        private const string RestoreFilePrefix = "wishbone_restore_";
+        private const string RecordAdded = "added";
+        private const string RecordPrevious = "previous";
+        private const string RecordTarget = "target";
+        private const string RecordNone = "none";
         private const string WishboneItemName = "Wishbone";
         private const string SilverTarget = "SilverOre";
         private const string GoldTarget = "GoldOre";
@@ -61,6 +66,42 @@ namespace SmartWishbone
 
         private static readonly List<PeerAnswer> peerAnswers = new List<PeerAnswer>();
 
+        // A logout or quit ends the test's coroutine without its finally; put the character back before Game saves it.
+        // Spawned objects stay recorded for the next run: a destroy sent while shutting down may never reach the server.
+        [HarmonyPatch(typeof(Game), nameof(Game.Shutdown))]
+        private static class RestoreOnShutdown
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Game __instance)
+            {
+                if (!running || __instance.m_shuttingDown)
+                {
+                    return;
+                }
+
+                if (runRoutine != null)
+                {
+                    SmartWishbonePlugin.Instance.StopCoroutine(runRoutine);
+                    runRoutine = null;
+                }
+
+                try
+                {
+                    RestorePlayer();
+                    Detail("a logout or quit interrupted the test; your utility slot and target are back as they were.");
+                }
+                catch (Exception e)
+                {
+                    Detail($"restoring on shutdown threw {e.GetType().Name}: {e.Message}");
+                }
+
+                failed++;
+                Line($"END FAIL: interrupted by a logout or quit at step {stepIndex}/{stepCount} {currentStep}: {passed} pass, {failed} fail, {skipped} skip; the spawned objects are removed by the next run.");
+                spawned.Clear();
+                running = false;
+            }
+        }
+
         // Every peer with this build answers a test's question about its trackable list, so one client can compare itself
         // with the server and the other players.
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Awake))]
@@ -89,6 +130,7 @@ namespace SmartWishbone
 
         private static readonly List<SpawnedVein> spawned = new List<SpawnedVein>();
         private static Terminal output;
+        private static Coroutine runRoutine;
         private static bool running;
         private static bool reported;
         private static int passed;
@@ -136,7 +178,8 @@ namespace SmartWishbone
 
                     if (words.Contains("clean"))
                     {
-                        Echo($"removed {Cleanup()} test object(s).");
+                        RecoverLeftovers();
+                        Echo($"removed {Cleanup()} test object(s); details in BepInEx\\{ResultsFolder}\\{ResultsFile}.");
                         return;
                     }
 
@@ -149,7 +192,7 @@ namespace SmartWishbone
                     }
 
                     var selected = Steps.Where(words.Contains).ToList();
-                    SmartWishbonePlugin.Instance.StartCoroutine(Run(selected.Count > 0 ? selected : Steps.ToList(), words.Contains("keep")));
+                    runRoutine = SmartWishbonePlugin.Instance.StartCoroutine(Run(selected.Count > 0 ? selected : Steps.ToList(), words.Contains("keep")));
                 });
         }
 
@@ -174,6 +217,8 @@ namespace SmartWishbone
                 Line($"BEGIN {ModName} {SmartWishbonePlugin.VERSION} ({DllHash()}) on {Role()} '{Player.m_localPlayer.GetPlayerName()}' "
                     + $"world '{ZNet.instance.GetWorldName()}': {steps.Count} steps, ~{estimate} s");
 
+                RecoverLeftovers();
+                savedTarget = TrackableSwitcher.GetCurrentTarget();
                 int leftovers = Cleanup();
 
                 if (leftovers > 0)
@@ -260,6 +305,7 @@ namespace SmartWishbone
 
                 Line($"END {(failed > 0 ? "FAIL" : "PASS")}: {passed} pass, {failed} fail, {skipped} skip in {Time.realtimeSinceStartup - started:0.0} s");
                 running = false;
+                runRoutine = null;
             }
         }
 
@@ -468,21 +514,28 @@ namespace SmartWishbone
                 var inventory = player.GetInventory();
                 var wishbone = inventory.GetAllItems().FirstOrDefault(i => i.m_dropPrefab && i.m_dropPrefab.name == WishboneItemName);
 
+                if (wishbone == null && !IsAdminOrHost())
+                {
+                    Skip("carry or equip a Wishbone first; giving you one needs an admin or the host.");
+                    yield break;
+                }
+
+                previousUtility = player.m_utilityItem;
+                WriteRestoreRecord(wishbone == null, previousUtility);
+
                 if (wishbone == null)
                 {
-                    if (!IsAdminOrHost())
-                    {
-                        Skip("carry or equip a Wishbone first; giving you one needs an admin or the host.");
-                        yield break;
-                    }
-
                     wishbone = inventory.AddItem(WishboneItemName, 1, 1, 0, 0L, string.Empty, true);
                     addedWishbone = wishbone != null;
+
+                    if (!addedWishbone)
+                    {
+                        WriteRestoreRecord(false, previousUtility);
+                    }
                 }
 
                 if (wishbone != null)
                 {
-                    previousUtility = player.m_utilityItem;
                     player.EquipItem(wishbone);
                     equippedWishbone = wishbone;
                     Detail("equipped a Wishbone in your utility slot for the test.");
@@ -889,6 +942,134 @@ namespace SmartWishbone
             addedWishbone = false;
 
             TrackableSwitcher.RestoreTarget(savedTarget);
+            DeleteRestoreRecord();
+        }
+
+        // Undoes what an interrupted earlier run (a crash, or a build without the shutdown hook) left on this character.
+        private static void RecoverLeftovers()
+        {
+            var player = Player.m_localPlayer;
+
+            if (!player)
+            {
+                return;
+            }
+
+            var inventory = player.GetInventory();
+            var utility = player.m_utilityItem;
+            var wishbones = inventory.GetAllItems().Where(IsWishbone).ToList();
+            string path = RestoreFilePath();
+
+            if (!File.Exists(path))
+            {
+                if (utility != null && IsWishbone(utility))
+                {
+                    var others = inventory.GetAllItems()
+                        .Where(i => i.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Utility && !IsWishbone(i))
+                        .Select(Describe)
+                        .ToArray();
+                    Detail($"no restore record for '{player.GetPlayerName()}' (an older build's run?); found: utility slot {Describe(utility)}, "
+                        + $"{wishbones.Count} Wishbone(s) carried, other utility items carried: {(others.Length > 0 ? string.Join(", ", others) : "none")}; left as is.");
+                }
+
+                return;
+            }
+
+            var record = File.ReadAllLines(path)
+                .Select(l => l.Split(new[] { '=' }, 2))
+                .Where(p => p.Length == 2)
+                .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+
+            if (utility != null && IsWishbone(utility))
+            {
+                player.UnequipItem(utility, false);
+            }
+
+            bool added = record.TryGetValue(RecordAdded, out string addedText) && addedText == bool.TrueString;
+
+            if (added && wishbones.Count > 0)
+            {
+                inventory.RemoveItem(utility != null && IsWishbone(utility) ? utility : wishbones[0]);
+            }
+
+            string previous = record.TryGetValue(RecordPrevious, out string previousText) ? previousText : RecordNone;
+            string previousNote = "none to put back";
+
+            if (previous != RecordNone)
+            {
+                var parts = previous.Split('|');
+                var match = parts.Length == 3
+                    ? inventory.GetAllItems().FirstOrDefault(i => i.m_dropPrefab && i.m_dropPrefab.name == parts[0]
+                        && i.m_quality.ToString() == parts[1] && i.m_variant.ToString() == parts[2])
+                    : null;
+
+                if (match != null)
+                {
+                    player.EquipItem(match, false);
+                    previousNote = $"re-equipped {previous}";
+                }
+                else
+                {
+                    previousNote = $"could not find {previous} to re-equip";
+                }
+            }
+
+            TrackableSwitcher.RestoreTarget(record.TryGetValue(RecordTarget, out string target) ? target : string.Empty);
+            DeleteRestoreRecord();
+            Detail($"restored '{player.GetPlayerName()}' after an interrupted run: {(added ? "removed the added Wishbone, " : string.Empty)}{previousNote}.");
+        }
+
+        private static void WriteRestoreRecord(bool added, ItemDrop.ItemData previous)
+        {
+            try
+            {
+                string path = RestoreFilePath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllLines(path, new[]
+                {
+                    $"{RecordAdded}={added}",
+                    $"{RecordPrevious}={(previous != null && previous.m_dropPrefab ? $"{previous.m_dropPrefab.name}|{previous.m_quality}|{previous.m_variant}" : RecordNone)}",
+                    $"{RecordTarget}={savedTarget ?? string.Empty}",
+                });
+            }
+            catch (Exception e)
+            {
+                SmartWishbonePlugin.Log.LogWarning($"{Tag}could not write the restore record: {e.Message}");
+            }
+        }
+
+        private static void DeleteRestoreRecord()
+        {
+            try
+            {
+                File.Delete(RestoreFilePath());
+            }
+            catch (Exception e)
+            {
+                SmartWishbonePlugin.Log.LogWarning($"{Tag}could not delete the restore record: {e.Message}");
+            }
+        }
+
+        private static string RestoreFilePath()
+        {
+            string character = Player.m_localPlayer ? Player.m_localPlayer.GetPlayerName() : "unknown";
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                character = character.Replace(c, '_');
+            }
+
+            return Path.Combine(Path.Combine(Paths.BepInExRootPath, ResultsFolder), RestoreFilePrefix + character + ".txt");
+        }
+
+        private static bool IsWishbone(ItemDrop.ItemData item)
+        {
+            return item != null && item.m_dropPrefab && item.m_dropPrefab.name == WishboneItemName;
+        }
+
+        private static string Describe(ItemDrop.ItemData item)
+        {
+            return item == null ? RecordNone : $"{(item.m_dropPrefab ? item.m_dropPrefab.name : item.m_shared.m_name)}|{item.m_quality}|{item.m_variant}";
         }
 
         // Removes this session's test objects and any recorded by an earlier run in this world that are loaded here.

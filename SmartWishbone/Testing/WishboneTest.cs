@@ -48,6 +48,10 @@ namespace SmartWishbone
         private const string PeerRpc = SmartWishbonePlugin.GUID + " WishboneTestPeer";
         private const byte PeerRequest = 0;
         private const byte PeerReply = 1;
+        private const byte CleanupRequest = 2;
+        private const byte CleanupReply = 3;
+        private const float DefaultHereRadius = 15f;
+        private const string MarkerKey = "smartwishbone_test_object";
         private const float PeerReplySeconds = 3f;
         private const string ServerLabel = "server";
 
@@ -65,6 +69,11 @@ namespace SmartWishbone
         }
 
         private static readonly List<PeerAnswer> peerAnswers = new List<PeerAnswer>();
+
+        // Spawned objects carry this ZDO flag, which is saved with the world: ZDO ids are reassigned on every world load
+        // (ZDO.Load -> SetID), so a recorded id means nothing after a server restart.
+        private static readonly int MarkerHash = MarkerKey.GetStableHashCode();
+        private static bool cleanupAnswered;
 
         // A logout or quit ends the test's coroutine without its finally; put the character back before Game saves it.
         // Spawned objects stay recorded for the next run: a destroy sent while shutting down may never reach the server.
@@ -139,7 +148,7 @@ namespace SmartWishbone
         private static int stepIndex;
         private static int stepCount;
         private static string currentStep;
-        private static string dllHash;
+        private static volatile string dllHash;
 
         private static ItemDrop.ItemData equippedWishbone;
         private static ItemDrop.ItemData previousUtility;
@@ -149,9 +158,12 @@ namespace SmartWishbone
 
         internal static void Register()
         {
+            HashDllInBackground();
+
             new Terminal.ConsoleCommand(CommandName,
                 "[Smart Wishbone] self-test (" + string.Join(", ", Steps) + "). "
-                + "Usage: wishbone_test [list|keep|clean|<step> ...]; keep = leave the spawned veins and the wishbone, clean = remove leftovers. "
+                + "Usage: wishbone_test [list|keep|clean [here [radius]]|<step> ...]; keep = leave the spawned veins and the wishbone, "
+                + "clean = remove leftovers (the server removes every marked test object; 'here' also removes unmarked test-prefab objects near you). "
                 + "Steps that spawn objects or give a Wishbone need an admin or the host",
                 args =>
                 {
@@ -179,7 +191,15 @@ namespace SmartWishbone
                     if (words.Contains("clean"))
                     {
                         RecoverLeftovers();
-                        Echo($"removed {Cleanup()} test object(s); details in BepInEx\\{ResultsFolder}\\{ResultsFile}.");
+                        int local = Cleanup();
+                        int here = words.IndexOf("here");
+                        float radius = here < 0 ? 0f
+                            : here + 1 < words.Count && float.TryParse(words[here + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float r) ? r
+                            : DefaultHereRadius;
+                        RequestServerCleanup(radius, Player.m_localPlayer.transform.position);
+                        Echo($"removed {local} test object(s) here; asked the server to remove every marked one"
+                            + (radius > 0f ? $" and any test-prefab object within {radius:0} m of you" : string.Empty)
+                            + $" (its answer follows; details in BepInEx\\{ResultsFolder}\\{ResultsFile}).");
                         return;
                     }
 
@@ -214,16 +234,17 @@ namespace SmartWishbone
 
             try
             {
-                Line($"BEGIN {ModName} {SmartWishbonePlugin.VERSION} ({DllHash()}) on {Role()} '{Player.m_localPlayer.GetPlayerName()}' "
+                Line($"BEGIN {ModName} {SmartWishbonePlugin.VERSION} ({dllHash ?? "pending"}) on {Role()} '{Player.m_localPlayer.GetPlayerName()}' "
                     + $"world '{ZNet.instance.GetWorldName()}': {steps.Count} steps, ~{estimate} s");
 
                 RecoverLeftovers();
                 savedTarget = TrackableSwitcher.GetCurrentTarget();
-                int leftovers = Cleanup();
+                Cleanup();
 
-                if (leftovers > 0)
+                if (IsAdminOrHost())
                 {
-                    Detail($"removed {leftovers} object(s) left by an earlier run.");
+                    RequestServerCleanup(0f, Vector3.zero);
+                    yield return WaitForCleanupAnswer();
                 }
 
                 foreach (string step in steps)
@@ -286,6 +307,11 @@ namespace SmartWishbone
                         int removed = Cleanup();
                         Detail($"removed {removed} test object(s).");
                         RestorePlayer();
+
+                        if (removed > 0 && IsAdminOrHost())
+                        {
+                            RequestServerCleanup(0f, Vector3.zero);
+                        }
                     }
                     else
                     {
@@ -422,7 +448,8 @@ namespace SmartWishbone
 
                 if (view && view.GetZDO() != null)
                 {
-                    AppendSpawnedId(view.GetZDO().m_uid);
+                    view.GetZDO().Set(MarkerHash, true);
+                    AppendSpawnedRecord(view.GetZDO().m_uid, vein[0], position);
                 }
             }
 
@@ -836,6 +863,18 @@ namespace SmartWishbone
                 return;
             }
 
+            if (kind == CleanupRequest)
+            {
+                HandleCleanupRequest(sender, package);
+                return;
+            }
+
+            if (kind == CleanupReply)
+            {
+                HandleCleanupReply(package);
+                return;
+            }
+
             if (kind == PeerReply && running)
             {
                 peerAnswers.Add(new PeerAnswer
@@ -1072,82 +1111,21 @@ namespace SmartWishbone
             return item == null ? RecordNone : $"{(item.m_dropPrefab ? item.m_dropPrefab.name : item.m_shared.m_name)}|{item.m_quality}|{item.m_variant}";
         }
 
-        // Removes this session's test objects and any recorded by an earlier run in this world that are loaded here.
-        // An id stays recorded until its object is removed or its ZDO is gone from this world.
+        // Removes the objects this session spawned. Objects left by a crash or an older run are removed by the server,
+        // which finds them by their marker in any zone, loaded or not (RequestServerCleanup).
         private static int Cleanup()
         {
             int removed = 0;
-            var destroyed = new HashSet<string>();
 
             foreach (var vein in spawned)
             {
-                if (!vein.Object)
-                {
-                    continue;
-                }
-
-                var ownView = vein.Object.GetComponent<ZNetView>();
-
-                if (ownView && ownView.GetZDO() != null)
-                {
-                    destroyed.Add(ownView.GetZDO().m_uid.ToString());
-                }
-
-                if (DestroyObject(vein.Object))
+                if (vein.Object && DestroyObject(vein.Object))
                 {
                     removed++;
                 }
             }
 
             spawned.Clear();
-
-            string path = SpawnedFilePath();
-
-            if (!File.Exists(path))
-            {
-                return removed;
-            }
-
-            var keep = new List<string>();
-
-            foreach (string line in File.ReadAllLines(path))
-            {
-                if (!TryParseZdoId(line, out ZDOID id) || destroyed.Contains(line.Trim()))
-                {
-                    continue;
-                }
-
-                var zdo = ZDOMan.instance.GetZDO(id);
-
-                if (zdo == null)
-                {
-                    keep.Add(line);
-                    continue;
-                }
-
-                var view = ZNetScene.instance.FindInstance(zdo);
-
-                if (view && DestroyObject(view.gameObject))
-                {
-                    removed++;
-                }
-                else
-                {
-                    zdo.SetOwner(ZDOMan.GetSessionID());
-                    ZDOMan.instance.DestroyZDO(zdo);
-                    removed++;
-                }
-            }
-
-            if (keep.Count > 0)
-            {
-                File.WriteAllLines(path, keep.ToArray());
-            }
-            else
-            {
-                File.Delete(path);
-            }
-
             return removed;
         }
 
@@ -1166,31 +1144,122 @@ namespace SmartWishbone
             return true;
         }
 
-        private static bool TryParseZdoId(string text, out ZDOID id)
+        // Asks the server (an admin only) to remove every marked test object in the world; with a radius it also removes
+        // unmarked test-prefab objects that close to the center (objects an older build spawned without the marker).
+        private static void RequestServerCleanup(float radius, Vector3 center)
         {
-            id = ZDOID.None;
-            var parts = text.Trim().Split(':');
-
-            if (parts.Length != 2 || !long.TryParse(parts[0], out long user) || !uint.TryParse(parts[1], out uint number))
-            {
-                return false;
-            }
-
-            id = new ZDOID(user, number);
-            return true;
+            cleanupAnswered = false;
+            var request = new ZPackage();
+            request.Write(CleanupRequest);
+            request.Write(radius);
+            request.Write(center);
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, PeerRpc, request);
         }
 
-        private static void AppendSpawnedId(ZDOID id)
+        private static void HandleCleanupRequest(long sender, ZPackage package)
+        {
+            float radius = package.ReadSingle();
+            Vector3 center = package.ReadVector3();
+
+            if (!ZNet.instance || !ZNet.instance.IsServer())
+            {
+                return;
+            }
+
+            var reply = new ZPackage();
+            reply.Write(CleanupReply);
+            var peer = ZNet.instance.GetPeer(sender);
+
+            if (sender != ZDOMan.GetSessionID() && (peer == null || !ZNet.instance.IsAdmin(peer.m_socket.GetHostName())))
+            {
+                reply.Write(-1);
+                reply.Write("refused: only an admin may remove test objects.");
+                ZRoutedRpc.instance.InvokeRoutedRPC(sender, PeerRpc, reply);
+                return;
+            }
+
+            var prefabs = new HashSet<int>(Veins.Values.Select(v => v[0].GetStableHashCode()));
+            var doomed = ZDOMan.instance.m_objectsByID.Values
+                .Where(z => prefabs.Contains(z.GetPrefab())
+                    && (z.GetBool(MarkerHash) || (radius > 0f && Utils.DistanceXZ(z.GetPosition(), center) <= radius)))
+                .ToList();
+            var names = new List<string>();
+
+            foreach (var zdo in doomed)
+            {
+                var prefab = ZNetScene.instance ? ZNetScene.instance.GetPrefab(zdo.GetPrefab()) : null;
+                names.Add($"{(prefab ? prefab.name : zdo.GetPrefab().ToString())} at {zdo.GetPosition().x:0},{zdo.GetPosition().z:0}{(zdo.GetBool(MarkerHash) ? string.Empty : " (unmarked)")}");
+                zdo.SetOwner(ZDOMan.GetSessionID());
+                ZDOMan.instance.DestroyZDO(zdo);
+            }
+
+            reply.Write(doomed.Count);
+            reply.Write(string.Join("; ", names.ToArray()));
+            ZRoutedRpc.instance.InvokeRoutedRPC(sender, PeerRpc, reply);
+        }
+
+        private static void HandleCleanupReply(ZPackage package)
+        {
+            int removed = package.ReadInt();
+            string details = package.ReadString();
+            cleanupAnswered = true;
+
+            string text = removed < 0
+                ? $"the server {details}"
+                : $"the server removed {removed} test object(s){(removed > 0 ? ": " + details : string.Empty)}.";
+            Detail(text);
+
+            if (!running)
+            {
+                Echo(text);
+            }
+
+            if (removed >= 0)
+            {
+                DeleteSpawnedRecord();
+            }
+        }
+
+        private static IEnumerator WaitForCleanupAnswer()
+        {
+            float waited = 0f;
+
+            while (!cleanupAnswered && waited < PeerReplySeconds)
+            {
+                yield return new WaitForSeconds(PollSeconds);
+                waited += PollSeconds;
+            }
+
+            if (!cleanupAnswered)
+            {
+                Detail($"the server did not answer the cleanup within {PeerReplySeconds:0} s (does it run this SmartWishbone build?); leftovers stay recorded.");
+            }
+        }
+
+        // Informational record of what a run spawned (the marker, not these ids, finds them again).
+        private static void AppendSpawnedRecord(ZDOID id, string prefab, Vector3 position)
         {
             try
             {
                 string path = SpawnedFilePath();
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.AppendAllText(path, id + Environment.NewLine);
+                File.AppendAllText(path, $"{id}|{prefab}|{position.x:0.0}|{position.z:0.0}{Environment.NewLine}");
             }
             catch (Exception e)
             {
-                SmartWishbonePlugin.Log.LogWarning($"{Tag}could not record spawned id {id}: {e.Message}");
+                SmartWishbonePlugin.Log.LogWarning($"{Tag}could not record spawned object {id}: {e.Message}");
+            }
+        }
+
+        private static void DeleteSpawnedRecord()
+        {
+            try
+            {
+                File.Delete(SpawnedFilePath());
+            }
+            catch (Exception e)
+            {
+                SmartWishbonePlugin.Log.LogWarning($"{Tag}could not delete the spawned record: {e.Message}");
             }
         }
 
@@ -1206,27 +1275,24 @@ namespace SmartWishbone
             return Path.Combine(Path.Combine(Paths.BepInExRootPath, ResultsFolder), SpawnedFilePrefix + world + ".txt");
         }
 
-        private static string DllHash()
+        // Hashes the DLL once, on a ThreadPool thread at load (the F5 contract keeps file hashing off the main thread).
+        private static void HashDllInBackground()
         {
-            if (dllHash != null)
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
-                return dllHash;
-            }
-
-            try
-            {
-                using (var sha = SHA256.Create())
+                try
                 {
-                    byte[] hash = sha.ComputeHash(File.ReadAllBytes(typeof(WishboneTest).Assembly.Location));
-                    dllHash = BitConverter.ToString(hash).Replace("-", string.Empty).Substring(0, 12);
+                    using (var sha = SHA256.Create())
+                    {
+                        byte[] hash = sha.ComputeHash(File.ReadAllBytes(typeof(WishboneTest).Assembly.Location));
+                        dllHash = BitConverter.ToString(hash).Replace("-", string.Empty).Substring(0, 12);
+                    }
                 }
-            }
-            catch (Exception)
-            {
-                dllHash = "unknown";
-            }
-
-            return dllHash;
+                catch (Exception)
+                {
+                    dllHash = "unknown";
+                }
+            });
         }
 
         private static void Pass(string reason)

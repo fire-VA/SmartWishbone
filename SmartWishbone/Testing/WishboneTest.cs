@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using HarmonyLib;
 using ServerSync;
 using System;
 using System.Collections;
@@ -39,10 +40,38 @@ namespace SmartWishbone
         private const int EstimateSeconds = 10;
         private const int BotEstimateSeconds = 80;
 
+        private const string PeerRpc = SmartWishbonePlugin.GUID + " WishboneTestPeer";
+        private const byte PeerRequest = 0;
+        private const byte PeerReply = 1;
+        private const float PeerReplySeconds = 3f;
+        private const string ServerLabel = "server";
+
         private static readonly string[] Steps =
         {
-            "effect", "data", "silver", "gold", "troll", "homing_silver", "homing_gold", "switch", "roundtrip", "logout", "bot_logout",
+            "effect", "data", "peers", "silver", "gold", "troll", "homing_silver", "homing_gold", "switch", "roundtrip", "logout", "bot_logout",
         };
+
+        private sealed class PeerAnswer
+        {
+            public string Who;
+            public int Count;
+            public string Hash;
+            public string Targets;
+        }
+
+        private static readonly List<PeerAnswer> peerAnswers = new List<PeerAnswer>();
+
+        // Every peer with this build answers a test's question about its trackable list, so one client can compare itself
+        // with the server and the other players.
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.Awake))]
+        private static class RegisterPeerRpc
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                ZRoutedRpc.instance.Register<ZPackage>(PeerRpc, OnPeerRpc);
+            }
+        }
 
         private static readonly Dictionary<string, string[]> Veins = new Dictionary<string, string[]>
         {
@@ -80,7 +109,8 @@ namespace SmartWishbone
         {
             new Terminal.ConsoleCommand(CommandName,
                 "[Smart Wishbone] self-test (" + string.Join(", ", Steps) + "). "
-                + "Usage: wishbone_test [list|keep|clean|<step> ...]; keep = leave the spawned veins and the wishbone, clean = remove leftovers",
+                + "Usage: wishbone_test [list|keep|clean|<step> ...]; keep = leave the spawned veins and the wishbone, clean = remove leftovers. "
+                + "Steps that spawn objects or give a Wishbone need an admin or the host",
                 args =>
                 {
                     output = args.Context;
@@ -120,7 +150,7 @@ namespace SmartWishbone
 
                     var selected = Steps.Where(words.Contains).ToList();
                     SmartWishbonePlugin.Instance.StartCoroutine(Run(selected.Count > 0 ? selected : Steps.ToList(), words.Contains("keep")));
-                }, isCheat: true);
+                });
         }
 
         private static IEnumerator Run(List<string> steps, bool keep)
@@ -159,6 +189,12 @@ namespace SmartWishbone
 
                     if (Veins.ContainsKey(step) || step.StartsWith("homing_"))
                     {
+                        if (!IsAdminOrHost())
+                        {
+                            Skip("needs an admin or the host: it spawns test objects.");
+                            continue;
+                        }
+
                         if (spawned.Count == 0)
                         {
                             SpawnVeins();
@@ -233,6 +269,7 @@ namespace SmartWishbone
             {
                 case "effect": return Wrap(CheckStatusEffect);
                 case "data": return Wrap(CheckData);
+                case "peers": return CheckPeers();
                 case "silver":
                 case "gold":
                 case "troll": return Wrap(() => CheckVein(step));
@@ -433,6 +470,12 @@ namespace SmartWishbone
 
                 if (wishbone == null)
                 {
+                    if (!IsAdminOrHost())
+                    {
+                        Skip("carry or equip a Wishbone first; giving you one needs an admin or the host.");
+                        yield break;
+                    }
+
                     wishbone = inventory.AddItem(WishboneItemName, 1, 1, 0, 0L, string.Empty, true);
                     addedWishbone = wishbone != null;
                 }
@@ -493,6 +536,13 @@ namespace SmartWishbone
             }
 
             bool isServer = ZNet.instance.IsServer();
+            var allowed = WishboneConfig.UsersAllowedToAddTrackables.Value;
+
+            if (!isServer && (allowed == WishboneConfig.UserLevel.Noone || (allowed == WishboneConfig.UserLevel.OnlyAdmins && !IsAdminOrHost())))
+            {
+                Skip($"the server's UsersAllowedToAddTrackables is {allowed}, so you cannot add trackables.");
+                yield break;
+            }
 
             TrackableData.ToggleTarget(probe);
             float addSeconds = 0f;
@@ -636,14 +686,137 @@ namespace SmartWishbone
             int afterResync = TrackableData.Data.Count;
             bool cacheKept = !ZNet.instance.IsServer() || WishboneConfig.CurrentDataCache.Value == cacheBefore;
 
-            if (afterBot == before && afterResync == before && cacheKept)
-            {
-                Pass($"the bot logged out and back in ({waited:0} s); you and the server kept {before} trackables.");
-            }
-            else
+            SendPeerQuery();
+            yield return new WaitForSeconds(PeerReplySeconds);
+            bool peersAgree = ComparePeers(out string peers);
+            bool botAnswered = peerAnswers.Any(a => a.Who != ServerLabel);
+
+            if (afterBot != before || afterResync != before || !cacheKept)
             {
                 Fail($"after the bot's logout you had {afterBot} trackables and the server sends {afterResync}, not {before}.");
             }
+            else if (!peersAgree || !botAnswered)
+            {
+                Fail($"you kept {before} trackables, but after its rejoin: {(botAnswered ? peers : "the bot did not answer the list check")}");
+            }
+            else
+            {
+                Pass($"the bot logged out and back in ({waited:0} s); {peers}");
+            }
+        }
+
+        // The other players and the server must hold the same trackable list and targets as this player.
+        private static IEnumerator CheckPeers()
+        {
+            if (OtherPlayerCount() == 0 && ZNet.instance.IsServer())
+            {
+                Skip("no other peer to compare with.");
+                yield break;
+            }
+
+            SendPeerQuery();
+            yield return new WaitForSeconds(PeerReplySeconds);
+
+            if (ComparePeers(out string summary))
+            {
+                Pass(summary);
+            }
+            else
+            {
+                Fail(summary);
+            }
+        }
+
+        private static void SendPeerQuery()
+        {
+            peerAnswers.Clear();
+            var request = new ZPackage();
+            request.Write(PeerRequest);
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, PeerRpc, request);
+        }
+
+        private static bool ComparePeers(out string summary)
+        {
+            int count = TrackableData.Data.Count;
+            string hash = DataHash();
+            string targets = TargetList();
+            var answers = peerAnswers.ToList();
+
+            if (answers.Count == 0)
+            {
+                summary = $"no peer answered within {PeerReplySeconds:0} s (does the server run this SmartWishbone build?).";
+                return false;
+            }
+
+            var differing = answers.Where(a => a.Hash != hash || a.Targets != targets).ToList();
+
+            if (differing.Count > 0)
+            {
+                summary = $"you hold {count} trackables ({hash}); different: "
+                    + string.Join("; ", differing.Select(a => $"{a.Who} {a.Count} ({a.Hash}) targets [{a.Targets}]").ToArray());
+                return false;
+            }
+
+            summary = $"{string.Join(", ", answers.Select(a => a.Who).ToArray())} hold the same {count} trackables ({hash}) "
+                + $"and {targets.Split(',').Length} targets as you.";
+            return true;
+        }
+
+        private static void OnPeerRpc(long sender, ZPackage package)
+        {
+            byte kind = package.ReadByte();
+
+            if (kind == PeerRequest)
+            {
+                if (sender == ZDOMan.GetSessionID())
+                {
+                    return;
+                }
+
+                var reply = new ZPackage();
+                reply.Write(PeerReply);
+                reply.Write(Player.m_localPlayer ? Player.m_localPlayer.GetPlayerName() : ServerLabel);
+                reply.Write(TrackableData.Data.Count);
+                reply.Write(DataHash());
+                reply.Write(TargetList());
+                ZRoutedRpc.instance.InvokeRoutedRPC(sender, PeerRpc, reply);
+                return;
+            }
+
+            if (kind == PeerReply && running)
+            {
+                peerAnswers.Add(new PeerAnswer
+                {
+                    Who = package.ReadString(),
+                    Count = package.ReadInt(),
+                    Hash = package.ReadString(),
+                    Targets = package.ReadString(),
+                });
+            }
+        }
+
+        private static string DataHash()
+        {
+            var lines = TrackableData.Data.Values
+                .Select(t => $"{t.prefabName}|{t.displayItem}|{t.condition}|{t.range.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToArray();
+
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", lines)));
+                return BitConverter.ToString(hash).Replace("-", string.Empty).Substring(0, 12);
+            }
+        }
+
+        private static string TargetList()
+        {
+            return string.Join(",", (TrackableData.targets ?? new Target[0]).Select(t => t.targetName).OrderBy(s => s, StringComparer.Ordinal).ToArray());
+        }
+
+        private static bool IsAdminOrHost()
+        {
+            return ZNet.instance && ZNet.instance.LocalPlayerIsAdminOrHost();
         }
 
         private static int OtherPlayerCount()

@@ -100,6 +100,7 @@
     <Compile Include="ServerSync\ServerSyncWrapper.cs" />
     <Compile Include="Tracking\SE_CustomFinder.cs" />
     <Compile Include="SmartWishbonePlugin.cs" />
+    <Compile Include="Testing\WishboneTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Data\SmartWishbone.Data.yaml">

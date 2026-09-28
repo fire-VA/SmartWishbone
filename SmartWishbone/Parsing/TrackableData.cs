@@ -67,13 +67,18 @@ namespace SmartWishbone
             personalData = newData;
         }
 
+        internal static int receivedFromServerCount;
+
         internal static void ClearSyncedData()
         {
             syncedData.Clear();
+            receivedFromServerCount = 0;
         }
 
         internal static void ReceiveNewDataFromServer(Dictionary<string, Trackable> newData)
         {
+            receivedFromServerCount++;
+
             var newValues = newData.Keys.Except(syncedData.Keys).ToList();
 
             Helper.Log($"Previous data count: {syncedData.Count}, new data count: {newData.Count}, difference count {newValues.Count}");

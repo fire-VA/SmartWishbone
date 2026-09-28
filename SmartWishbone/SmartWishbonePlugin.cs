@@ -11,11 +11,17 @@ namespace SmartWishbone
         public const string NAME = "Smart Wishbone";
         public const string VERSION = "1.0.3";
 
+        internal static SmartWishbonePlugin Instance;
+
         protected void Awake()
         {
+            Instance = this;
+
             WishboneConfig.LoadConfig(this);
 
             Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
+
+            WishboneTest.Register();
         }
     }
 

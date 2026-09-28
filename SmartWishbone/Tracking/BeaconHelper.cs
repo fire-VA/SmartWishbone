@@ -68,7 +68,7 @@ namespace SmartWishbone
 
         // since Valheim 1.0, silver veins, gold veins and frozen troll corpses all carry their vanilla beacon on a child named 'Becon',
         // so the object owning the beacon is checked first, and the beacon's own name only as a fallback for older data files
-        private static bool TryGetTrackable(Dictionary<string, Trackable> targetList, Beacon beacon, out Trackable trackable)
+        internal static bool TryGetTrackable(Dictionary<string, Trackable> targetList, Beacon beacon, out Trackable trackable)
         {
             return targetList.TryGetValue(GetOwnerPrefabName(beacon), out trackable)
                 || targetList.TryGetValue(Utils.GetPrefabName(beacon.gameObject), out trackable);

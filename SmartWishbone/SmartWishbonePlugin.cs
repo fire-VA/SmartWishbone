@@ -12,10 +12,12 @@ namespace SmartWishbone
         public const string VERSION = "1.0.3";
 
         internal static SmartWishbonePlugin Instance;
+        internal static BepInEx.Logging.ManualLogSource Log;
 
         protected void Awake()
         {
             Instance = this;
+            Log = Logger;
 
             WishboneConfig.LoadConfig(this);
 

@@ -48,6 +48,20 @@ namespace SmartWishbone
             InternalSwitchTarget(0);
         }
 
+        internal static void RestoreTarget(string targetName)
+        {
+            if (targetName.IsNullOrWhiteSpace())
+            {
+                RemoveCurrentTarget();
+            }
+            else
+            {
+                PlayerPrefs.SetString(playerPrefsCurrentTargetKey, targetName);
+            }
+
+            UpdateTarget();
+        }
+
         internal static void SwitchTarget(bool forward)
         {
             InternalSwitchTarget(forward ? 1 : -1);

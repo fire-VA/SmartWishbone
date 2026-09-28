@@ -93,9 +93,21 @@ namespace SmartWishbone
 
         internal static void SetConfigDataWithoutEvent(string newValue)
         {
+            // resets and the server's own startup value must never be sent: on logout an admin client would otherwise push
+            // an empty trackable list to the server, which saves it and hands it to every other player
+            bool wasProcessingServerUpdate = ConfigSync.ProcessingServerUpdate;
+            ConfigSync.ProcessingServerUpdate = true;
             CurrentDataCache.SettingChanged -= CurrentDataCache_SettingChanged;
-            CurrentDataCache.Value = newValue;
-            CurrentDataCache.SettingChanged += CurrentDataCache_SettingChanged;
+
+            try
+            {
+                CurrentDataCache.Value = newValue;
+            }
+            finally
+            {
+                CurrentDataCache.SettingChanged += CurrentDataCache_SettingChanged;
+                ConfigSync.ProcessingServerUpdate = wasProcessingServerUpdate;
+            }
         }
 
         private static IEnumerator WaitForUpdate()

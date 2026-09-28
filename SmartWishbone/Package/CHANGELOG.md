@@ -8,6 +8,7 @@
 - The default data file now tracks gold veins and frozen troll corpses (Gold Ore, after Fader), the new buried, combat and Deep North chests and buried skeletal remains, like the base game wishbone does in 1.0
 - The default data file now uses the base game's 1.0 beacon ranges (silver veins 50, buried chests 40, muddy scrap piles 25)
 - Items without an ItemDrop in the ObjectDB no longer stop the wishbone from being replaced
+- Fixed an admin logging out of a server emptying the trackable list for every player on it: the logout reset of the synced list was sent to the server like an admin's config change. It now stays local
 - Fixed clients on a dedicated server getting no trackables: the bundled ServerSync.dll was built before Valheim 1.0 made ZRoutedRpc.Everybody a constant, so its config-change handler failed every time and the synced trackable list was never read. ServerSync is now a standalone copy of Fires Unified Core's ConfigSync (a fork of blaxxun-boop's ServerSync, MIT-0), compiled into the mod. It has no version check, so a client with a different version of the mod is no longer refused at login
 
 ## 1.0.2

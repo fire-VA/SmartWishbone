@@ -92,7 +92,7 @@ namespace SmartWishbone
                 return;
             }
 
-            var allObjects = UnityEngine.Object.FindObjectsOfType<Destructible>(true);
+            var allObjects = UnityEngine.Object.FindObjectsByType<Destructible>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None);
 
             foreach (var obj in allObjects)
             {

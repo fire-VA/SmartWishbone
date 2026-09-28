@@ -1,5 +1,11 @@
-﻿# this is the base game silver vein (prefab name 'silvervein')
-- { prefabName: "Becon", displayItem: "SilverOre", condition: "defeated_bonemass" }
-- { prefabName: "TreasureChest_meadows_buried", displayItem: "$piece_chestwood" }
+﻿# base game beacons with the base game ranges of Valheim 1.0 (since 1.0 the silver vein shares its beacon name 'Becon' with gold veins and frozen troll corpses, so they are listed by their own names)
+- { prefabName: "silvervein", displayItem: "SilverOre", condition: "defeated_bonemass", range: 50.0 }
+- { prefabName: "goldvein", displayItem: "GoldOre", condition: "defeated_fader", range: 50.0 }
+- { prefabName: "TrollFrost_Dead", displayItem: "GoldOre", condition: "defeated_fader", range: 50.0 }
+- { prefabName: "TreasureChest_meadows_buried", displayItem: "$piece_chestwood", range: 40.0 }
+- { prefabName: "TreasureChest_meadows_combat", displayItem: "$piece_chestwood", range: 30.0 }
+- { prefabName: "TreasureChest_memorial_buried", displayItem: "$piece_chestwood", range: 40.0 }
+- { prefabName: "TreasureChest_deepnorth_village", displayItem: "$piece_chestwood", range: 30.0 }
+- { prefabName: "Pickable_MountainRemains01_buried", displayItem: "$item_pickable_skeletalremains", range: 40.0 }
 # this is for all the muddy scrap piles
-- { prefabName: "mudpile_beacon", displayItem: "IronScrap", condition: "defeated_gdking" }
+- { prefabName: "mudpile_beacon", displayItem: "IronScrap", condition: "defeated_gdking", range: 25.0 }

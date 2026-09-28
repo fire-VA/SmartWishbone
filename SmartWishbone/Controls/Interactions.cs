@@ -28,17 +28,18 @@ namespace SmartWishbone
                 return;
             }
 
-            string prefabName;
+            string prefabName = BeaconHelper.GetOwnerPrefabName(destructible);
 
             var child = hoverRoot.GetComponentInChildren<Beacon>();
 
-            if (child)
+            if (child && !TrackableData.Data.ContainsKey(prefabName))
             {
-                prefabName = Utils.GetPrefabName(child.gameObject);
-            }
-            else
-            {
-                prefabName = Utils.GetPrefabName(hoverRoot.gameObject);
+                string beaconName = Utils.GetPrefabName(child.gameObject);
+
+                if (TrackableData.Data.ContainsKey(beaconName))
+                {
+                    prefabName = beaconName;
+                }
             }
 
             Helper.Log($"Valid hover object: {prefabName}");

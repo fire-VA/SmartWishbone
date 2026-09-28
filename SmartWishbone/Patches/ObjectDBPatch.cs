@@ -66,7 +66,14 @@ namespace SmartWishbone
 
             foreach (GameObject gameObject in __instance.m_items)
             {
-                var wishbone = gameObject.GetComponent<ItemDrop>().m_itemData.m_shared;
+                var itemDrop = gameObject ? gameObject.GetComponent<ItemDrop>() : null;
+
+                if (!itemDrop)
+                {
+                    continue;
+                }
+
+                var wishbone = itemDrop.m_itemData.m_shared;
 
                 if (wishbone.m_equipStatusEffect == vanillaWishboneEffect)
                 {

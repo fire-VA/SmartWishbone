@@ -1,6 +1,6 @@
 {
-  "name": "Smart_Wishbone_Continued",
-  "description": "Smart Wishbone for Valheim 1.0: track more ores and objects, choose your tracked target, set detection ranges. A fork of Goldenrevolver's Smart Wishbone (MIT); replaces the original.",
+  "name": "SmartWishboneUpdated",
+  "description": "Smart Wishbone by Goldenrevolver, updated for Valheim 1.0: track more ores and objects, choose your tracked target, set detection ranges. Credited fork (MIT); replaces the original.",
   "version_number": "1.0.6",
   "website_url": "https://github.com/fire-VA/SmartWishbone",
   "dependencies": [

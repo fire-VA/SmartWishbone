@@ -1,6 +1,6 @@
-# Smart Wishbone Continued
+# Smart Wishbone Updated
 
-A continued fork of [Smart Wishbone](https://github.com/Goldenrevolver/SmartWishbone) by **Goldenrevolver**, updated for Valheim 1.0 by fire-VA. Smart Wishbone's design and features are Goldenrevolver's work. This fork makes it run on Valheim 1.0 and fixes a few multiplayer issues (see the CHANGELOG). The original is MIT-licensed; its license and copyright notice are kept in LICENSE.
+**All credit for Smart Wishbone goes to its original author, Goldenrevolver.** This is an updated fork of [Smart Wishbone](https://github.com/Goldenrevolver/SmartWishbone), kept working on Valheim 1.0 by fire-VA because the original is no longer updated. Smart Wishbone's design and features are Goldenrevolver's work. This fork makes it run on Valheim 1.0 and fixes a few multiplayer issues (see the CHANGELOG). The original is MIT-licensed; its license and copyright notice are kept in LICENSE.
 
 **It replaces the original.** It keeps the original's plugin id (`goldenrevolver.SmartWishbone`), so your config file and your `SmartWishbone.Data.yaml` carry over. Remove the original Smart_Wishbone package before you install this one. Install it on the server and on every client: the trackable list and the synced settings come from the server.
 

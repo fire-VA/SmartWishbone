@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.0.6
-- First release of the continued fork (Smart_Wishbone_Continued, by fire-VA). It keeps the original's plugin id, so settings and the data file carry over; remove the original package first
+- First release of the updated fork (SmartWishboneUpdated, by fire-VA) of Goldenrevolver's Smart Wishbone. It keeps the original's plugin id, so settings and the data file carry over; remove the original package first
 - Contains the Valheim 1.0 fixes listed under 1.0.3 to 1.0.5 below, which were never released as the original package
 - The release build leaves out the test command the fork's own test rig uses
 

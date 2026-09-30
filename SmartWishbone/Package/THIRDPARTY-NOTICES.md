@@ -1,6 +1,6 @@
 # Third-party notices
 
-Smart Wishbone Continued is a fork of Smart Wishbone by Goldenrevolver (MIT, see LICENSE). The mod's DLL also contains
+Smart Wishbone Updated is a fork of Smart Wishbone by Goldenrevolver (MIT, see LICENSE). The mod's DLL also contains
 code from these projects:
 
 ## YamlDotNet 12.3.1

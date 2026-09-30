@@ -1,3 +1,9 @@
+# Smart Wishbone Continued
+
+A continued fork of [Smart Wishbone](https://github.com/Goldenrevolver/SmartWishbone) by **Goldenrevolver**, updated for Valheim 1.0 by fire-VA. Smart Wishbone's design and features are Goldenrevolver's work. This fork makes it run on Valheim 1.0 and fixes a few multiplayer issues (see the CHANGELOG). The original is MIT-licensed; its license and copyright notice are kept in LICENSE.
+
+**It replaces the original.** It keeps the original's plugin id (`goldenrevolver.SmartWishbone`), so your config file and your `SmartWishbone.Data.yaml` carry over. Remove the original Smart_Wishbone package before you install this one. Install it on the server and on every client: the trackable list and the synced settings come from the server.
+
 This mod makes the wishbone fully configurable: track more kinds of ore, select your currently tracked ore, change the detection ranges and more.
 
 ## 1 - Changing the tracked target
@@ -24,4 +30,8 @@ Trackable data can be edited in the 'SmartWishbone.Data.yaml' file. It contains 
 
 Multiple example files for different base game objects have been added to the download. These **don't** do anything on their own. Only the 'SmartWishbone.Data.yaml' is getting loaded and saved to. You can however copy the content of those files into the main file (make sure that it's still proper yaml, yaml is whitespace sensitive) or simply use them as inspiration.
 
-Source code available on github: https://github.com/Goldenrevolver/SmartWishbone
+## Credits and source
+
+- Original mod and source: Goldenrevolver, https://github.com/Goldenrevolver/SmartWishbone (MIT)
+- This fork: https://github.com/fire-VA/SmartWishbone
+- Bundled libraries: see THIRDPARTY-NOTICES.md

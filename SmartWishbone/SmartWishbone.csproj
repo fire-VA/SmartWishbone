@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <Import Project="GameDir.targets" />
@@ -134,4 +134,11 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets'))" />
   </Target>
+  <!-- Rig-only test command (wishbone_test): this file stays out of the public repo. When it is present the build includes it and defines FIRES_TESTS. -->
+  <PropertyGroup Condition="Exists('Testing\WishboneTest.cs')">
+    <DefineConstants>$(DefineConstants);FIRES_TESTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('Testing\WishboneTest.cs')">
+    <Compile Include="Testing\WishboneTest.cs" />
+  </ItemGroup>
 </Project>

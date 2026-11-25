@@ -1,4 +1,4 @@
-﻿using SmartWishbone.ServerSync;
+using SmartWishbone.ServerSync;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -47,6 +47,13 @@ namespace SmartWishbone
             }
             else
             {
+                int cap = WishboneConfig.MaxServerTrackables.Value;
+                if (personalData.Count >= cap)
+                {
+                    Helper.LogWarning($"Refused to add trackable {prefabName}: the tracking list is at its cap of {cap} (MaxServerTrackables)");
+                    return;
+                }
+
                 Helper.Log($"Added trackable {prefabName}");
 
                 personalData.Add(prefabName, new Trackable(prefabName, "Auto"));
@@ -68,6 +75,8 @@ namespace SmartWishbone
 
             UpdateTargets();
         }
+
+        internal static bool IsServerTracked(string prefabName) => personalData.ContainsKey(prefabName);
 
         internal static void SetPersonalData(Dictionary<string, Trackable> newData)
         {

@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using HarmonyLib;
 using System.Reflection;
 
@@ -9,7 +9,7 @@ namespace SmartWishbone
     {
         public const string GUID = "goldenrevolver.SmartWishbone";
         public const string NAME = "Smart Wishbone";
-        public const string VERSION = "1.0.6";
+        public const string VERSION = "1.0.15";
 
         internal static SmartWishbonePlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;
@@ -22,6 +22,10 @@ namespace SmartWishbone
             WishboneConfig.LoadConfig(this);
 
             Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
+
+#if FIRES_TESTS
+            WishboneTest.Register();
+#endif
         }
     }
 
@@ -31,8 +35,7 @@ namespace SmartWishbone
         [HarmonyPatch(nameof(Game.OnApplicationQuit)), HarmonyPrefix]
         internal static void OnApplicationQuitPatch()
         {
-            // prevent saving it to disk (well, remove it before the user notices)
-            // TODO doesn't seem to update the config file in time
+            // The data cache is runtime-only; remove it so it is not saved to the config file.
 
             WishboneConfig.CurrentDataCache.SettingChanged -= WishboneConfig.CurrentDataCache_SettingChanged;
             WishboneConfig.config.Remove(WishboneConfig.CurrentDataCache.Definition);

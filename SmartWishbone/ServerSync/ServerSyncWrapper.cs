@@ -24,7 +24,7 @@ namespace SmartWishbone
 
         internal static ConfigEntry<Toggle> BindForceEnabledSyncLocker(this ConfigFile configFile, ConfigSync serverSyncInstance, string group, string name)
         {
-            ConfigEntry<Toggle> configEntry = configFile.Bind(group, name, Toggle.On, ForceEnabledDisplay("It's required that the mod is installed on the server and all clients. Changing this setting does nothing, ServerSync is always enabled."));
+            ConfigEntry<Toggle> configEntry = configFile.Bind(group, name, Toggle.On, HiddenDisplay("It's required that the mod is installed on the server and all clients. Changing this setting does nothing, ServerSync is always enabled."));
             configEntry.Value = Toggle.On;
 
             serverSyncInstance.AddLockingConfigEntry(configEntry);

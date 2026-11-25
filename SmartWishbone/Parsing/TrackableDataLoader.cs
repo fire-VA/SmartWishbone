@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -11,6 +11,9 @@ namespace SmartWishbone
 {
     internal class TrackableDataLoader
     {
+        // Range given to a trackable whose configured range is not positive.
+        private const double DefaultRange = 20;
+
         private const string embeddedPathFormat = "SmartWishbone.Data.{0}.yaml";
 
         private const string dataFileInfix = "SmartWishbone.Data";
@@ -61,9 +64,39 @@ namespace SmartWishbone
             }
         }
 
+        // 1.0.14 ([wishbone], lead 10-28 stall ledger: FejdStartupPatch.FejdStartupAwakePatch 1,892 ms once at the menu): the language files and the
+        // data file were each found by a full recursive walk of the BepInEx folder (3 walks; BepInEx\cache alone holds thousands of files). ONE walk
+        // now collects every "SmartWishbone.*" file once, skipping BepInEx\cache (never holds them), and every search filters that list.
+        private static List<string> s_ownFiles;
+        internal static string[] FindOwnFiles(string pattern)
+        {
+            if (s_ownFiles == null)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                s_ownFiles = new List<string>();
+                string root = Path.GetDirectoryName(BepInEx.Paths.PluginPath);
+                string cache = Path.GetFullPath(BepInEx.Paths.CachePath).TrimEnd(Path.DirectorySeparatorChar);
+                var dirs = new Stack<string>(); dirs.Push(root);
+                while (dirs.Count > 0)
+                {
+                    string d = dirs.Pop();
+                    try
+                    {
+                        s_ownFiles.AddRange(Directory.GetFiles(d, "SmartWishbone.*"));
+                        foreach (var sub in Directory.GetDirectories(d))
+                            if (!string.Equals(Path.GetFullPath(sub).TrimEnd(Path.DirectorySeparatorChar), cache, System.StringComparison.OrdinalIgnoreCase)) dirs.Push(sub);
+                    }
+                    catch (System.Exception) { }
+                }
+                BepInEx.Logging.Logger.CreateLogSource("SmartWishbone.Search").LogDebug($"own file search: {s_ownFiles.Count} file(s) in {sw.ElapsedMilliseconds} ms (one walk of {root}, BepInEx\\cache skipped)");
+            }
+            string rx = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", ".*") + "$";
+            return s_ownFiles.Where(f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(f), rx, System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToArray();
+        }
+
         private static string FindExternalDataFile()
         {
-            var dataFilesFound = Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath), $"{dataFileInfix}.yaml", SearchOption.AllDirectories).ToList();
+            var dataFilesFound = FindOwnFiles($"{dataFileInfix}.yaml").ToList();
 
             if (dataFilesFound.Count == 0)
             {
@@ -76,7 +109,7 @@ namespace SmartWishbone
 
         internal static List<Trackable> LoadDataFiles()
         {
-            var dataFilesFound = Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath), $"{dataFileInfix}.yaml", SearchOption.AllDirectories).ToList();
+            var dataFilesFound = FindOwnFiles($"{dataFileInfix}.yaml").ToList();
 
             var trackables = new List<Trackable>();
 
@@ -183,7 +216,7 @@ namespace SmartWishbone
                 if (trackableValue.range <= 0)
                 {
                     Helper.LogWarning($"Trackable range is not positive, resetting to default of 20");
-                    trackableValue.range = 20;
+                    trackableValue.range = DefaultRange;
                 }
             }
 

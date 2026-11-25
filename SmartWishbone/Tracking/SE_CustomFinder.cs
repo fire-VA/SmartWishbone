@@ -4,6 +4,9 @@ namespace SmartWishbone
 {
     internal class SE_CustomFinder : SE_Finder
     {
+        // How often the closest matching beacon is searched for again.
+        private const float BeaconUpdateIntervalSeconds = 1f;
+
         private float m_customUpdateBeaconTimer = 0f;
 
         internal static Sprite originalWishboneSprite;
@@ -51,7 +54,7 @@ namespace SmartWishbone
         {
             this.m_customUpdateBeaconTimer += dt;
 
-            if (this.m_customUpdateBeaconTimer > 1f)
+            if (this.m_customUpdateBeaconTimer > BeaconUpdateIntervalSeconds)
             {
                 this.m_customUpdateBeaconTimer = 0f;
                 Beacon beacon = BeaconHelper.FindClosestBeaconInRange(this.m_character.transform.position, TrackableSwitcher.currentTarget);

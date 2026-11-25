@@ -5,6 +5,9 @@ namespace SmartWishbone
 {
     internal static class BeaconHelper
     {
+        // Search range used for a beacon until its trackable entry says otherwise.
+        private const float DefaultRange = 20f;
+
         public static Beacon FindClosestBeaconInRange(Vector3 point, Target target)
         {
             Beacon closestBeacon = null;
@@ -19,7 +22,7 @@ namespace SmartWishbone
                     continue;
                 }
 
-                double range = 20f;
+                double range = DefaultRange;
 
                 if (!TryGetTrackable(targetList, thisBeacon, out var targetInstance))
                 {

@@ -9,14 +9,12 @@ namespace SmartWishbone
 {
     public class WishboneConfig
     {
+        // Lets the new data settle before the wishbone re-picks its target.
+        private const float TargetUpdateDelaySeconds = 0.1f;
+
         internal static ConfigEntry<KeyboardShortcut> ToggleTrackingObjectKey;
         internal static ConfigEntry<KeyboardShortcut> NextTargetKey;
         internal static ConfigEntry<KeyboardShortcut> PreviousTargetKey;
-
-        // TODO option to hide UI icon
-
-        // TODO implement
-        //internal static ConfigEntry<Target> ShowTargetMessage;
 
         internal static ConfigEntry<bool> EnableDebugLogs;
 
@@ -27,6 +25,9 @@ namespace SmartWishbone
         internal static ConfigEntry<bool> EnforceWorldConditions;
 
         internal static ConfigEntry<UserLevel> UsersAllowedToAddTrackables;
+
+        internal static ConfigEntry<int> TrackableTogglesPerMinute;
+        internal static ConfigEntry<int> MaxServerTrackables;
 
         internal static ConfigEntry<string> CurrentDataCache;
 
@@ -43,30 +44,46 @@ namespace SmartWishbone
 
             string sectionName = "0 - Client Settings";
 
-            NextTargetKey = config.Bind(sectionName, nameof(NextTargetKey), new KeyboardShortcut(KeyCode.N));
-            PreviousTargetKey = config.Bind(sectionName, nameof(PreviousTargetKey), new KeyboardShortcut(KeyCode.B));
-            ToggleTrackingObjectKey = config.Bind(sectionName, nameof(ToggleTrackingObjectKey), new KeyboardShortcut(KeyCode.J));
-
-            //ShowTargetMessage = config.Bind(sectionName, nameof(ShowTargetMessage), Target.OnlyInUniversalMode);
+            NextTargetKey = config.Bind(sectionName, nameof(NextTargetKey), new KeyboardShortcut(KeyCode.N), "Switches the wishbone to the next kind of thing it tracks.");
+            PreviousTargetKey = config.Bind(sectionName, nameof(PreviousTargetKey), new KeyboardShortcut(KeyCode.B), "Switches the wishbone to the previous kind of thing it tracks.");
+            ToggleTrackingObjectKey = config.Bind(sectionName, nameof(ToggleTrackingObjectKey), new KeyboardShortcut(KeyCode.J), "Adds or removes the object you are looking at from the wishbone tracking list.");
 
             sectionName = "1 - Host/ Server Settings";
 
             UseServerSync = config.BindForceEnabledSyncLocker(serverSyncInstance, sectionName, nameof(UseServerSync));
 
-            SearchDistanceOverride = config.BindSynced(serverSyncInstance, sectionName, nameof(SearchDistanceOverride), 0f, $"Only does something while it's not equal to zero, affected by {nameof(SearchDistanceOverrideStyle)}.");
-            SearchDistanceOverrideStyle = config.BindSynced(serverSyncInstance, sectionName, nameof(SearchDistanceOverrideStyle), RangeStyle.AddTo);
+            SearchDistanceOverride = config.BindSynced(serverSyncInstance, sectionName, nameof(SearchDistanceOverride), 0f,
+                new ConfigDescription("Changes the wishbone search range in metres. 0 = normal range.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            SearchDistanceOverrideStyle = config.BindSynced(serverSyncInstance, sectionName, nameof(SearchDistanceOverrideStyle), RangeStyle.AddTo,
+                new ConfigDescription("AddTo adds the range above to the normal range; SetTo replaces it.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
 
-            EnforceWorldConditions = config.BindSynced(serverSyncInstance, sectionName, nameof(EnforceWorldConditions), true);
+            EnforceWorldConditions = config.BindSynced(serverSyncInstance, sectionName, nameof(EnforceWorldConditions), true, "Only track things once their world conditions (such as boss progress) are met.");
             EnforceWorldConditions.SettingChanged += EnforceWorldConditions_SettingChanged;
 
-            UsersAllowedToAddTrackables = config.BindSynced(serverSyncInstance, sectionName, nameof(UsersAllowedToAddTrackables), UserLevel.OnlyAdmins);
+            UsersAllowedToAddTrackables = config.BindSynced(serverSyncInstance, sectionName, nameof(UsersAllowedToAddTrackables), UserLevel.OnlyAdmins, "Who may add new objects to the tracking list.");
+
+            TrackableTogglesPerMinute = config.BindSynced(serverSyncInstance, sectionName, nameof(TrackableTogglesPerMinute), 10,
+                new ConfigDescription("Most tracking list changes one player may ask the server for per minute.", new AcceptableValueRange<int>(1, 120), new ConfigurationManagerAttributes { IsAdvanced = true }));
+            MaxServerTrackables = config.BindSynced(serverSyncInstance, sectionName, nameof(MaxServerTrackables), 500,
+                new ConfigDescription("Most objects the server tracking list may hold. Removing is always allowed.", new AcceptableValueRange<int>(1, 10000), new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             sectionName = "9 - Other Settings";
 
-            CurrentDataCache = config.BindSynced(serverSyncInstance, sectionName, nameof(CurrentDataCache), string.Empty, HiddenDisplay("You can ignore this. This is just for runtime synchronization."));
+            CurrentDataCache = config.BindSynced(serverSyncInstance, sectionName, nameof(CurrentDataCache), string.Empty, HiddenDisplay("Internal: the tracking list sent by the server."));
             CurrentDataCache.SettingChanged += CurrentDataCache_SettingChanged;
 
-            EnableDebugLogs = config.Bind(sectionName, nameof(EnableDebugLogs), true);
+            EnableDebugLogs = config.Bind(sectionName, nameof(EnableDebugLogs), false,
+                new ConfigDescription("Writes extra troubleshooting messages to the log.", null, new ConfigurationManagerAttributes { Browsable = false }));
+
+            // Older installs saved EnableDebugLogs = true in their cfg; switch it off once, then respect the player's choice.
+            var debugLogsDefaultOffApplied = config.Bind(sectionName, "DebugLogsDefaultOffApplied", false,
+                new ConfigDescription("Internal: the one-time switch of debug logs to off has run.", null, new ConfigurationManagerAttributes { Browsable = false }));
+
+            if (!debugLogsDefaultOffApplied.Value)
+            {
+                EnableDebugLogs.Value = false;
+                debugLogsDefaultOffApplied.Value = true;
+            }
         }
 
         private static void EnforceWorldConditions_SettingChanged(object sender, System.EventArgs e)
@@ -112,7 +129,7 @@ namespace SmartWishbone
 
         private static IEnumerator WaitForUpdate()
         {
-            yield return new WaitForSeconds(0.1f);
+            yield return new WaitForSeconds(TargetUpdateDelaySeconds);
 
             TrackableSwitcher.UpdateTarget();
         }

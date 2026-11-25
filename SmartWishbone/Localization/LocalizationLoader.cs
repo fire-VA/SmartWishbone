@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,7 +30,7 @@ namespace SmartWishbone
         {
             var currentLanguage = Localization.instance.GetSelectedLanguage();
 
-            var languageFilesFound = Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath), "SmartWishbone.*.json", SearchOption.AllDirectories);
+            var languageFilesFound = TrackableDataLoader.FindOwnFiles("SmartWishbone.*.json")   /* 1.0.14: one shared walk */;
 
             bool externalFileLoaded = false;
 
